@@ -1,0 +1,73 @@
+import sqlite3
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+
+# Создаем или подключаемся к базе данных
+conn = sqlite3.connect('expenses.db')
+cursor = conn.cursor()
+
+# Создаем таблицу, если её нет
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    amount REAL NOT NULL,
+    note TEXT
+)
+''')
+conn.commit()
+
+# Команда /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Hello! I am your Expense Tracker Bot.\n"
+        "Use /add to add expense (example: /add Food 500 Lunch)\n"
+        "Use /list to see your expenses."
+    )
+
+# Команда /add
+async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user_id = update.message.from_user.id
+        category = context.args[0]
+        amount = float(context.args[1])
+        note = " ".join(context.args[2:]) if len(context.args) > 2 else ""
+        
+        cursor.execute(
+            "INSERT INTO expenses (user_id, category, amount, note) VALUES (?, ?, ?, ?)",
+            (user_id, category, amount, note)
+        )
+        conn.commit()
+        await update.message.reply_text(f"Expense added: {category} - {amount} - {note}")
+    except Exception as e:
+        await update.message.reply_text("Error! Use format: /add Category Amount Note")
+
+# Команда /list
+async def list_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    cursor.execute("SELECT category, amount, note FROM expenses WHERE user_id=?", (user_id,))
+    rows = cursor.fetchall()
+    
+    if not rows:
+        await update.message.reply_text("No expenses found.")
+        return
+    
+    message = "Your expenses:\n"
+    for r in rows:
+        message += f"{r[0]} - {r[1]} - {r[2]}\n"
+    await update.message.reply_text(message)
+
+# Основная функция
+if __name__ == '__main__':
+    # Вставь сюда свой токен
+    TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add", add_expense))
+    app.add_handler(CommandHandler("list", list_expenses))
+
+    print("Bot is running...")
+    app.run_polling()
